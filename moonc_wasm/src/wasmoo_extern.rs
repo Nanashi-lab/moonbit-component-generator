@@ -168,25 +168,27 @@ fn chmod(
     let path = Path::new(&path);
     let mode = args.get(1);
     let mode = mode.to_number(scope).unwrap().value() as u32;
-    
+
     #[cfg(unix)]
     let permission = Permissions::from_mode(mode);
-    
+
     #[cfg(windows)]
     let permission = {
-        let mut perms = fs::metadata(path).map(|m| m.permissions()).unwrap_or_else(|_| {
-            // Create a default permission
-            let file = File::create("temp_file_for_perms").unwrap();
-            let perms = file.metadata().unwrap().permissions();
-            let _ = fs::remove_file("temp_file_for_perms");
-            perms
-        });
+        let mut perms = fs::metadata(path)
+            .map(|m| m.permissions())
+            .unwrap_or_else(|_| {
+                // Create a default permission
+                let file = File::create("temp_file_for_perms").unwrap();
+                let perms = file.metadata().unwrap().permissions();
+                let _ = fs::remove_file("temp_file_for_perms");
+                perms
+            });
         // On Windows, we can only set the readonly attribute
         // If mode has write permission (0o200), make it writable, otherwise readonly
         perms.set_readonly((mode & 0o200) == 0);
         perms
     };
-    
+
     match fs::set_permissions(path, permission) {
         Err(err) => {
             let message = v8::String::new(scope, &err.to_string()).unwrap();
@@ -354,7 +356,7 @@ fn open(
         opts.custom_flags(custom_flags);
         opts.mode((mode & 0o777) as u32); // assure permission is legal
     }
-    
+
     #[cfg(windows)]
     {
         // Windows doesn't support these flags in the same way
@@ -476,7 +478,7 @@ fn access(
                         return;
                     }
                 }
-                
+
                 #[cfg(windows)]
                 {
                     // On Windows, we check if it's a directory or has .exe/.bat/.cmd extension
@@ -484,12 +486,13 @@ fn access(
                         // Directories are executable on Windows
                     } else {
                         let path_str = path.to_str().unwrap_or("");
-                        let is_executable = path_str.ends_with(".exe") || 
-                                          path_str.ends_with(".bat") || 
-                                          path_str.ends_with(".cmd") ||
-                                          path_str.ends_with(".com");
+                        let is_executable = path_str.ends_with(".exe")
+                            || path_str.ends_with(".bat")
+                            || path_str.ends_with(".cmd")
+                            || path_str.ends_with(".com");
                         if !is_executable {
-                            let message = v8::String::new(scope, "execute permission denied").unwrap();
+                            let message =
+                                v8::String::new(scope, "execute permission denied").unwrap();
                             let exn = v8::Exception::error(scope, message);
                             scope.throw_exception(exn);
                             return;
@@ -741,21 +744,19 @@ fn __utimes(path: String, atime: f64, mtime: f64) -> std::io::Result<()> {
 fn __utimes(path: String, atime: f64, mtime: f64) -> std::io::Result<()> {
     let _atime_sys = filetime_from_f64(atime)?;
     let _mtime_sys = filetime_from_f64(mtime)?;
-    
+
     // On Windows, we need to open the file and use SetFileTime
     // This is a simplified approach using the filetime crate's approach
-    let file = OpenOptions::new()
-        .write(true)
-        .open(&path)?;
-    
+    let file = OpenOptions::new().write(true).open(&path)?;
+
     // For now, we'll just update the modify time using set_times if available
     // This is a limitation on Windows without additional dependencies
     drop(file);
-    
+
     // Use a simpler approach - just touch the file to update modify time
     // This is not perfect but works for basic functionality
     let _ = OpenOptions::new().write(true).open(&path)?;
-    
+
     Ok(())
 }
 
@@ -823,7 +824,7 @@ fn isatty(
                 // On Windows, for simplicity, assume files opened via our fd table are not TTY
                 // Real TTY detection would require additional Windows APIs
                 0
-            },
+            }
             Err(_) => 0,
         }
     };
@@ -905,7 +906,7 @@ fn mkdir(
             Ok(_) => {}
         }
     }
-    
+
     #[cfg(windows)]
     {
         // On Windows, directory permissions are less granular
@@ -922,7 +923,7 @@ fn mkdir(
             Ok(_) => {}
         }
     }
-    
+
     let undefined = v8::undefined(scope);
     ret.set(undefined.into());
 }
@@ -1095,7 +1096,7 @@ fn create_stat_object<'s>(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        
+
         let id = v8::String::new(scope, "dev").unwrap();
         let dev = v8::Number::new(scope, metadata.dev() as f64);
         stat.set(scope, id.into(), dev.into());
@@ -1136,7 +1137,7 @@ fn create_stat_object<'s>(
         let ctime = v8::Number::new(scope, metadata.ctime() as f64);
         stat.set(scope, id.into(), ctime.into());
     }
-    
+
     #[cfg(windows)]
     {
         let id = v8::String::new(scope, "dev").unwrap();
@@ -1149,8 +1150,16 @@ fn create_stat_object<'s>(
 
         let id = v8::String::new(scope, "mode").unwrap();
         let mode = {
-            let mut mode_val = if metadata.is_dir() { 0o040000 } else { 0o100000 };
-            mode_val |= if metadata.permissions().readonly() { 0o444 } else { 0o666 };
+            let mut mode_val = if metadata.is_dir() {
+                0o040000
+            } else {
+                0o100000
+            };
+            mode_val |= if metadata.permissions().readonly() {
+                0o444
+            } else {
+                0o666
+            };
             v8::Number::new(scope, mode_val as f64)
         };
         stat.set(scope, id.into(), mode.into());
@@ -1174,7 +1183,9 @@ fn create_stat_object<'s>(
         let id = v8::String::new(scope, "atime").unwrap();
         let atime = {
             let accessed_time = metadata.accessed().unwrap_or(std::time::UNIX_EPOCH);
-            let duration = accessed_time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+            let duration = accessed_time
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
             v8::Number::new(scope, duration.as_secs_f64())
         };
         stat.set(scope, id.into(), atime.into());
@@ -1182,7 +1193,9 @@ fn create_stat_object<'s>(
         let id = v8::String::new(scope, "mtime").unwrap();
         let mtime = {
             let modified_time = metadata.modified().unwrap_or(std::time::UNIX_EPOCH);
-            let duration = modified_time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+            let duration = modified_time
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
             v8::Number::new(scope, duration.as_secs_f64())
         };
         stat.set(scope, id.into(), mtime.into());
@@ -1190,12 +1203,14 @@ fn create_stat_object<'s>(
         let id = v8::String::new(scope, "ctime").unwrap();
         let ctime = {
             let created_time = metadata.created().unwrap_or(std::time::UNIX_EPOCH);
-            let duration = created_time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+            let duration = created_time
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
             v8::Number::new(scope, duration.as_secs_f64())
         };
         stat.set(scope, id.into(), ctime.into());
     }
-    
+
     let id = v8::String::new(scope, "size").unwrap();
     let size = v8::Number::new(scope, metadata.len() as f64);
     stat.set(scope, id.into(), size.into());
@@ -1477,17 +1492,17 @@ fn fchmod(
             return;
         }
     };
-    
+
     #[cfg(unix)]
     let permission = Permissions::from_mode(mode);
-    
+
     #[cfg(windows)]
     let permission = {
         let mut perms = file.metadata().unwrap().permissions();
         perms.set_readonly((mode & 0o200) == 0);
         perms
     };
-    
+
     match file.set_permissions(permission) {
         Err(err) => {
             let message = v8::String::new(scope, &err.to_string()).unwrap();
